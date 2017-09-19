@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SousVide</title>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.2/jquery.min.js"></script>
+<link rel="stylesheet" href="https://gitcdn.link/repo/Chalarangelo/mini.css/master/dist/mini-default.min.css">
+<script>
+function lerp(a,b,t) { return a*(1-t)+b*t }
+function frac(a,b,v) { return (v - a)/(b-a) }
+function map(value, inMin, inMax, outMin, outMax) { return lerp(outMin,outMax, frac(inMin, inMax, value)) }
+
+class Graph
+{
+    constructor(canvas)
+    {
+        this.canvas = canvas
+        this.ctx = canvas.getContext("2d");
+    }
+
+    SetXLimits(minX,maxX, divsX)
+    {
+        this.maxX = maxX
+        this.minX = minX
+        this.divsX = divsX
+    }
+    SetYLimits(minY,maxY, divsY)
+    {
+        this.maxY = maxY
+        this.minY = minY
+        this.divsY = divsY
+    }
+    clear() { this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height); }
+
+    SetLimitsAuto(path)
+    {
+        this.maxY = -500
+        this.minY = 500
+        for(var t=0;t<path.length;t++)
+        {
+            this.maxY = Math.max(this.maxY, path[t]);
+            this.minY = Math.min(this.minY, path[t]);
+        }
+
+        this.maxY = Math.ceil(this.maxY)
+        this.minY = Math.floor(this.minY)
+
+        //this.minY = this.maxY-5
+        var diffY = this.maxY-this.minY;
+
+        if (diffY==0)
+        {
+            this.minY--
+            this.maxY++
+        }
+
+	//if (diffY>5)
+	//{
+	//    this.minY = this.maxY-5;
+	//}
+
+        this.divsY=1
+    }
+
+    drawScale(xoffset)
+    {
+        this.ctx.beginPath();
+        this.ctx.strokeStyle = '#000000';
+        for(var t=this.minY;t<this.maxY;t+=this.divsY)
+        {
+            var tt = Math.round(this.scaleYToCanvas(t));
+
+            this.ctx.font = "15px Arial";
+            this.ctx.fillText(t,0,tt-2);
+
+            this.ctx.moveTo(10, tt);
+            this.ctx.lineTo(this.canvas.width, tt);
+        }
+        this.ctx.stroke();
+
+        xoffset = Math.max(0,xoffset-this.maxX);
+        xoffset = (this.divsX) - xoffset % (this.divsX);
+
+        this.ctx.beginPath();
+        this.ctx.strokeStyle = "#DDDDDD";
+        for(var t=this.minX;t<this.maxX;t+=this.divsX)
+        {
+            var x = this.scaleXToCanvas(t + xoffset)
+            this.ctx.moveTo(x, this.canvas.height );
+            this.ctx.lineTo(x, 0 );
+        }
+        this.ctx.stroke();
+    }
+
+    drawPath(path, color)
+    {
+        this.ctx.beginPath();
+        this.ctx.strokeStyle = color;
+        var lastY=this.scaleYToCanvas(path[0])
+        this.ctx.moveTo(0, lastY);
+
+        for(var t=1;t<path.length;t++)
+        {
+            var tt = this.scaleXToCanvas(t)
+            this.ctx.lineTo(tt, lastY );
+            lastY= Math.round(this.scaleYToCanvas(path[t]))
+            this.ctx.lineTo(tt, lastY);
+        }
+        this.ctx.stroke();
+    }
+
+    getContext() { return this.ctx; }
+
+    scaleYToCanvas(y)
+    {
+        return map(y, this.minY, this.maxY, this.canvas.height, 0);
+    }
+    scaleXToCanvas(x)
+    {
+        return map(x, this.minX, this.maxX, 0, this.canvas.width);
+    }
+}
+
+function pad(num, size) { return  ('0000'+num).slice(-size); }
+function FormatTime(h,m,s) { return pad(h,2) + ":" + pad(m,2) + ((s!=undefined)?(":" + pad(s,2)):"") }
+function MinutesToTimeMS(val) { return FormatTime(Math.floor(val/60),Math.floor(val%60)) }
+function MinutesToTimeHM(val) { return FormatTime(Math.floor(val/(60*60)),Math.floor((val/60)%60)) }
+function SecondsToTimeHMS(val) { return FormatTime(Math.floor(val/3600), Math.floor(val/60)%60, val%60) }
+function TimeToSeconds(v)
+{
+    var vv=v.split(":")
+    if (v.length==5 && vv.length==2)
+        return (parseFloat(vv[0])*60+parseFloat(vv[1]))*60;
+    return -1
+}
+
+var histSize=0;
+var histInput = new Array()
+var histOutput = new Array()
+
+var host = location.hostname;
+var graph;
+var obj = false;
+
+
+function ProcessVars(vars, attr)
+{
+  for(var key in vars)
+  {
+    var type = key.charAt(0)
+    var val = vars[key];
+    var comp = $("#"+key.slice(1));
+    var style = attr + " style='width:85%;'";
+    if (type=="s")
+    {
+      comp.html("<input "+style+" id='"+ key+"' value='" + val + "' >");
+      comp.children().change(function() { FlashData($(this), $(this).val()) });
+    }
+    else if (type=="f" || type=="i")
+    {
+      comp.html("<input "+style+" type='number' id='"+ key+"' value='" + val + "'>");
+      comp.children().change(function() { FlashData($(this), $(this).val()) });
+    }
+    else if (type=="t")
+    {
+      comp.html("<input "+style+" pattern='[0-9]{2}:[0-9]{2}$' title='Use HH:MM format' id='"+ key+"' value='" + MinutesToTimeHM(val) + "'>");
+      comp.children().change(function() { FlashData($(this), $(this).val()) });
+    }
+
+    if (type=="s")
+      val = "'"+val+"'"
+    eval(key+"="+val);
+  }
+}
+
+function WebSocketTest()
+{
+    if ("WebSocket" in window)
+    {
+       // Let us open a web socket
+       var ws = new WebSocket("ws://" + host + "/ws");
+       ws.binaryType = "arraybuffer";
+       var xoffset = 0;
+       ws.onopen = function()
+       {
+          histInput = new Array();
+          histOutput = new Array();
+       };
+
+       ws.onerror = function(event)
+       {
+	         $("#Status").html("Socket error");
+       };
+
+       ws.onclose = function(event)
+       {
+	        $("#Status").html("Socket closed, reason:"+ event.code);
+       };
+
+       ws.onmessage = function (evt)
+       {
+          if (typeof evt.data === "string")
+          {
+              var j = JSON.parse(evt.data);
+              ProcessVars(j.vars, "");
+              ProcessVars(j.const, "readonly");
+          }
+          else
+          {
+            var dv = new Float32Array(evt.data);
+            for(var i=0;i<dv.length/2;i++)
+            {
+                histInput.push(dv[2*i]);
+                histOutput.push(dv[2*i+1]);
+            }
+
+            graph.clear();
+            graph.SetLimitsAuto(histInput);
+            graph.drawScale(tOnTimeSecs);
+
+            graph.drawPath(histInput, '#f00000');
+            graph.SetYLimits(0,255,1);
+            graph.drawPath(histOutput, '#008000');
+            $("#tOnTimeSecs").val(SecondsToTimeHMS(tOnTimeSecs++));
+            if (iStatus==3)
+                $("#sStatusMsg").val(sStatusMsg + ", time left:  " + SecondsToTimeHMS(tTimeLeft--));
+
+            if (histInput.length> histMaxSize )
+            {
+                histInput.shift();
+                histOutput.shift();
+            }
+          }
+       };
+    }
+    else
+    {
+       alert("WebSocket NOT supported by your Browser!");
+    }
+ }
+
+function FlashData(comp, val)
+{
+  var v = TimeToSeconds(val)
+  if (v>=0) val = v;
+
+  comp.css({"background-color":"#808080"})
+  str = "http://" + host + "/update.html?name=" + comp.attr('id') +"&val=" + val;
+  $.ajax({ url: str , context: comp, success: function()
+  {
+    var id = setInterval(fade, 100, $(this));
+    function fade(comp)
+    {
+      v = comp.css("background-color").split(",");
+      v = parseInt(v[1])+40;
+      comp.css({"background-color":"rgb("+v+","+v+","+v+")"})
+      if (v>=255)
+      {
+          clearInterval(id);
+      }
+    }
+  }});
+}
+
+$(document).ready(function()
+{
+  graph = new Graph(document.getElementById("myCanvas"));
+  graph.SetXLimits(0,60*10, 60);
+  WebSocketTest();
+})
+
+</script>
+<style>
+  .label-aligned {
+  align-items: center;
+}
+</style>
+
+</head>
+<body>
+  <header>
+  <a href="#" class="logo">Sous Vide</a>
+</header>
+	<div class="container">
+    <div class="row">
+      <div class="col-lg-4 col-lg-offset-4 col-md-5 col-md-offset-4 col-sm-12">
+        <form>
+          <fieldset>
+            <legend>Temperature history</legend>
+            <canvas id="myCanvas" height="100" style="border:1px solid #000000;display: block;width:100%"></canvas>
+          </fieldset>
+          <fieldset>
+            <legend>controls</legend>
+            <div class="row">
+              <div class="row label-aligned">
+                <div class="col-lg-3 col-md-3 col-sm-3">
+                  <label for="SetPoint">Temp:</label>
+                </div>
+                <div class="col-lg-9 col-md-9 col-sm-9">
+                  <div  id='SetPoint'></div>
+                </div>
+              </div>
+              <div class="row label-aligned">
+                <div class="col-lg-3 col-md-3 col-sm-3">
+                  <label for="TimeDelay">Timer:</label>
+                </div>
+                  <div class="col-lg-9 col-md-9 col-sm-9">
+                  <div  id='TimeDelay'></div>
+                </div>
+              </div>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Status</legend>
+            <div class="row label-aligned">
+              <div class="col-lg-3  col-md-3 col-sm-3 ">
+                <label>Status</label>
+              </div>
+              <div class="col-lg-9 col-md-9 col-sm-9">
+                <div  id='StatusMsg'></div>
+              </div>
+            </div>
+            <div class="row label-aligned">
+              <div class="col-lg-3  col-md-3 col-sm-3 ">
+                <label>Up time</label>
+              </div>
+              <div class="col-lg-9 col-md-9 col-sm-9">
+                <div id='OnTimeSecs'></div>
+              </div>
+            </div>
+            <div class="row label-aligned">
+              <div class="col-lg-3  col-md-3 col-sm-3 ">
+                <label>Heating</label>
+              </div>
+              <div class="col-lg-9 col-md-9 col-sm-9">
+                <div id='RelayTimeOnSecs'></div>
+              </div>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>PID constants</legend>
+            <div class="row label-aligned">
+              <div class="col-lg-3  col-md-3 col-sm-3 ">
+                <label>Kp</label>
+              </div>
+              <div class="col-lg-9 col-md-9 col-sm-9">
+                <div  id='Kp'></div>
+              </div>
+            </div>
+            <div class="row label-aligned">
+              <div class="col-lg-3  col-md-3 col-sm-3 ">
+                <label>Ki</label>
+              </div>
+              <div class="col-lg-9 col-md-9 col-sm-9">
+                <div  id='Ki'></div>
+              </div>
+            </div>
+            <div class="row label-aligned">
+              <div class="col-lg-3  col-md-3 col-sm-3 ">
+                <label>Kd</label>
+              </div>
+              <div class="col-lg-9 col-md-9 col-sm-9">
+                <div id='Kd'></div>
+              </div>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Logging</legend>
+            <div class="row label-aligned">
+              <div class="col-lg-3 col-md-3 col-sm-3">
+                <label>Delay(secs)</label>
+              </div>
+              <div class="col-lg-9 col-md-9 col-sm-9">
+                <div id='LoggerDelay'></div>
+              </div>
+            </div>
+            <div class="row label-aligned">
+              <div class="col-lg-3 col-md-3 col-sm-3">
+                <label>URL</label>
+              </div>
+              <div class="col-lg-9 col-md-9 col-sm-9">
+                <div  id='LoggerUrl'></div>
+              </div>
+            </div>
+          </fieldset>
+      </form>
+    </div>
+    </div>
+  </div>
+
+  <footer>
+  <p>&copy; 2001-2016 Web Corporation | <a href="#">About</a> | <a href="#">Terms of use</a></p>
+</footer>
+</body>
+</html>

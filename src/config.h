@@ -2,12 +2,8 @@
 // MNDS name
 #define HOST_NAME "sousvide"
 
-//your router name and password
-#define SSID_NAME "YourRouterNameHere"
-#define SSID_PASSWORD "YourPasswordHere"
-
 //pin where the relay is connected to
-#define RELAY_PIN 2
+#define RELAY_PIN 5
 
 //pin where the thermometer is connected to
 #define ONE_WIRE_BUS 14
@@ -17,7 +13,7 @@
 #define HTTP_PASSWORD "admin"
 
 //this is to enable OTA updates
-#define OTA
+#define OTA 1
 
 // url of where the temperature and power will get logged.
 #define LOGGER_URL "192.168.1.5/log.php?1=%&2=%"

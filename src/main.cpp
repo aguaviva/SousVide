@@ -7,6 +7,8 @@
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <SPIFFSEditor.h>
+#include <DNSServer.h>
+#include <ESPAsyncWiFiManager.h>         //https://github.com/tzapu/WiFiManager
 
 #include "helpers/History.h"
 #include "Relay.h"
@@ -17,17 +19,19 @@
 #include "MachineState.h"
 #include "config.h"
 
+
 //////////////////////////////////////////////////////////////////
 
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
+DNSServer dns;
 
 PWM DataStreamer(1000); //update temperature graph every second
 
 struct STATE
 {
-  float Input;
-  float Output;
+    float Input;
+    float Output;
 };
 
 History<STATE> histData;
@@ -69,127 +73,118 @@ void websocketsOnConnect(AsyncWebSocketClient * client)
 
 void setup ( void )
 {
-  Serial.begin ( 115200 );
-  Serial.setDebugOutput(true);
+    Serial.begin ( 115200 );
+    Serial.setDebugOutput(true);
 
-  // Wait for connection
-  Serial.print( "\nConnecting to wifi." );
-  WiFi.hostname(HOST_NAME);
-  WiFi.begin ( SSID_NAME, SSID_PASSWORD );
-  while ( WiFi.status() != WL_CONNECTED )
-  {
-    delay ( 500 );
-    Serial.print ( "." );
-  }
-  Serial.printf ( "\nConnected to %s\n", SSID_NAME );
-  Serial.print ( "IP address: " );
-  Serial.println ( WiFi.localIP() );
+    // Wait for connection
+    AsyncWiFiManager wifiManager(&server,&dns);
+    wifiManager.autoConnect("AutoConnectAP");
 
   #ifdef OTA
-  ArduinoOTA.setHostname(HOST_NAME);
-  ArduinoOTA.begin();
-  Serial.printf("HTTPUpdateServer ready! Open http://%s.local/update in your browser\n", HOST_NAME);
+    ArduinoOTA.setHostname(HOST_NAME);
+    ArduinoOTA.begin();
+    Serial.printf("HTTPUpdateServer ready! Open http://%s.local/update in your browser\n", HOST_NAME);
   #endif
 
-  // Start MSDN
-  if ( MDNS.begin ( HOST_NAME ) )
-  {
-    MDNS.addService("http", "tcp", 80);
-    Serial.println ( "MDNS responder started" );
-  }
-
-  // Start Spiffs
-  {
-    SPIFFS.begin();
-    server.addHandler(new SPIFFSEditor(HTTP_USERNAME, HTTP_PASSWORD));
-    server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.htm");
-    Serial.println ( "SPIFFS started" );
-  }
-
-  //start and init winsockets
-  ws.onEvent([](AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len)
-  {
-    if(type == WS_EVT_CONNECT)
+    // Start MSDN
+    if ( MDNS.begin ( HOST_NAME ) )
     {
-      Serial.printf("ws[%s][%u] connected\n", server->url(), client->id());
-      client->ping();
-      websocketsOnConnect(client);
-    }
-  });
-  server.addHandler(&ws);
-
-  server.on("/update.html", HTTP_GET, [](AsyncWebServerRequest *request)
-  {
-    String name = request->getParam("name")->value();
-    String val = request->getParam("val")->value();
-
-    if (pidSetVars(name, val))
-    {}
-    else if (machineStateSetVars(name, val))
-    {}
-    else if (loggerSetVars(name, val))
-    {}
-    else
-    {
-      request->send( 200, "application/json", "{ \"res\":\"var not found\" }");
-      return;
+        MDNS.addService("http", "tcp", 80);
+        Serial.println ( "MDNS responder started" );
     }
 
-    request->send ( 200, "application/json", "{ \"res\":\"ok\" }" );
-  });
+    // Start Spiffs
+    {
+        SPIFFS.begin();
+        server.addHandler(new SPIFFSEditor(HTTP_USERNAME, HTTP_PASSWORD));
+        server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.htm");
+        Serial.println ( "SPIFFS started" );
+    }
 
-  server.onNotFound([](AsyncWebServerRequest *request)
-  {
-    request->send(404);
-  });
+    //start and init winsockets
+    ws.onEvent([](AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len)
+    {
+        if(type == WS_EVT_CONNECT)
+        {
+            Serial.printf("ws[%s][%u] connected\n", server->url(), client->id());
+            client->ping();
+            websocketsOnConnect(client);
+        }
+    });
+    server.addHandler(&ws);
 
-  server.begin();
-  Serial.println ( "Webserver started " );
-  temperatureSensorInit();
-  Serial.println ( "sensor started " );
-  relayInit();
-  Serial.println ( "relay started " );
+    server.on("/update.html", HTTP_GET, [](AsyncWebServerRequest *request)
+    {
+        String name = request->getParam("name")->value();
+        String val = request->getParam("val")->value();
+
+        if (pidSetVars(name, val))
+        {}
+        else if (machineStateSetVars(name, val))
+        {}
+        else if (loggerSetVars(name, val))
+        {}
+        else
+        {
+            request->send( 200, "application/json", "{ \"res\":\"var not found\" }");
+            return;
+        }
+
+        request->send ( 200, "application/json", "{ \"res\":\"ok\" }");
+    });
+
+    server.onNotFound([](AsyncWebServerRequest *request)
+    {
+        request->send(404);
+    });
+
+    server.begin();
+    Serial.println ("Webserver started ");
+    temperatureSensorInit();
+    Serial.println ("sensor started ");
+    relayInit();
+    Serial.println ("relay started ");
 }
 
 void loop ( void )
 {
-  //Get sensor data and set it as inut for the PID
-  //
-  static double Input;
-  temperatureGetReading(&Input);
-  pidSetInput(Input);
+    //Get sensor data and set it as inut for the PID
+    //
+    static double Input;
+    temperatureGetReading(&Input);
+    pidSetInput(Input);
 
-  //log temperature
-  //
-  loggerUpdate(Input, pidGetOutput());
+    //log temperature in a remote server
+    //
+    loggerUpdate(Input, pidGetOutput());
 
-  // Do the functionality a typical oven does
-  //
-  double Output = machineStateUpdate(Input);
+    // Do the functionality a typical oven does
+    //
+    double Output = machineStateUpdate(Input);
 
-  //If the status changes notify everyone
-  //
-  char msg[256];
-  if (machineStateGetStatusJSON(msg))
-  {
-    ws.textAll(msg);
-  }
+    //If the status changes notify everyone
+    //
+    char msg[256];
+    if (machineStateGetStatusJSON(msg))
+    {
+        ws.textAll(msg);
+    }
 
-  // do relay low freq pwm
-  //
-  relaySetFreq(Output);
+    // do relay low freq pwm
+    //
+    relaySetFreq(Output);
 
-  // update clients with latest Input(temperatura) and Output
-  //
-  if (DataStreamer.tick())
-  {
-    STATE st = { (float)Input, (float)Output };
-    histData.Queue(st);
+    // update clients with latest Input(temperatura) and Output
+    //
+    if (DataStreamer.tick())
+    {
+        STATE st = { (float)Input, (float)Output };
+        histData.Queue(st);
 
-    ws.binaryAll((char*)&st, sizeof(STATE));
-  }
+        ws.binaryAll((char*)&st, sizeof(STATE));
+    }
 
-  // let other modules update
-  MDNS.update();
-  ArduinoOTA.handle();
+    // let other modules update
+    MDNS.update();
+    ArduinoOTA.handle();
 }

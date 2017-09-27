@@ -36,6 +36,8 @@ pwm(int pin)
     pinMode(m_pin, OUTPUT);
 }
 
+// updates the phase correct long term PWM
+//
 void update(int t)
 {
     int c = m_oc & 1;
@@ -72,6 +74,9 @@ LOCAL void ICACHE_FLASH_ATTR heartbeat_cb (void * arg)
 
 static os_timer_t heartbeat_timer = {0};
 
+//////////////////////////////////////////////////////////////////
+// Inits the PWM relay
+//////////////////////////////////////////////////////////////////
 void relayInit()
 {
     os_timer_disarm (&heartbeat_timer);
@@ -79,11 +84,17 @@ void relayInit()
     os_timer_arm (&heartbeat_timer, RELAY_PWM_CLOCK, true);
 }
 
+//////////////////////////////////////////////////////////////////
+// Sets the PWM rate
+//////////////////////////////////////////////////////////////////
 void relaySetFreq(double rate)
 {
     relay.SetOC((((double)(RELAY_PWM_PERIOD*2+1))*rate)/255);
 }
 
+//////////////////////////////////////////////////////////////////
+// Gets the number of seconds the relay has been on (this helps compute the consumption)
+//////////////////////////////////////////////////////////////////
 unsigned long relayGetTimeOn()
 {
     return relay.GetTimeOnSecs();

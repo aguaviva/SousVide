@@ -113,6 +113,7 @@ void loggerUpdate(float Input, int Output)
 
     if (LoggerState == LOGGERSTATE_LoggerWaitingForSeparator)
     {
+        // skip all headers until it gets the "\r\n\r\n" string, right after it comes the body
         static int cnt = 0;
         char str[] = "\r\n\r\n";
 

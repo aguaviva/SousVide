@@ -7,14 +7,16 @@ enum CookingStatus
     ST_Start = 1,
     ST_Preheating = 2,
     ST_Cooking = 3,
-    ST_Finished = 4
+    ST_Finished = 4,
+    ST_Error = 5,
 } statusCurrent = ST_Stopped;
 
-const char static *StatusMessages[] = { "Stopped", "Start", "Preheating", "Cooking", "Finished" };
+const char static *StatusMessages[] = { "Stopped", "Start", "Preheating", "Cooking", "Finished", "Error" };
 
 Timer timer;
 
 //////////////////////////////////////////////////////////
+
 static bool statusDirty = true;
 
 static void SetStatus(CookingStatus statusNew)
@@ -28,6 +30,13 @@ static void SetStatus(CookingStatus statusNew)
         pidDoManual(0);
 
     statusCurrent = statusNew;
+}
+
+void SetStatusError()
+{
+    SetStatus(ST_Error);
+    pidDoManual(0);
+    timer.Stop();
 }
 
 size_t machineStateGetVars(char *out)
@@ -78,12 +87,13 @@ double machineStateUpdate(double Input)
 
     if (statusCurrent == ST_Preheating)
     {
+        // has it reached the set point?
         if (Input >=  pidGetSetPoint())
         {
             timer.Start();
             SetStatus(ST_Cooking);
         }
-        else if (Input >=  pidGetSetPoint()-2)//if getting close by 2 degrees to target temp switch to PDI
+        else if (Input >=  pidGetSetPoint()-2) //if getting close by 2 degrees to target temp switch to PDI
         {
             pidDoAutomatic();
         }

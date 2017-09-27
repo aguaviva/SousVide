@@ -87,6 +87,7 @@ void setup ( void )
   #endif
 
     // Start MSDN
+    //
     if ( MDNS.begin ( HOST_NAME ) )
     {
         MDNS.addService("http", "tcp", 80);
@@ -94,6 +95,7 @@ void setup ( void )
     }
 
     // Start Spiffs
+    //
     {
         SPIFFS.begin();
         server.addHandler(new SPIFFSEditor(HTTP_USERNAME, HTTP_PASSWORD));
@@ -101,7 +103,8 @@ void setup ( void )
         Serial.println ( "SPIFFS started" );
     }
 
-    //start and init winsockets
+    // Start and init winsockets
+    //
     ws.onEvent([](AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len)
     {
         if(type == WS_EVT_CONNECT)
@@ -113,6 +116,8 @@ void setup ( void )
     });
     server.addHandler(&ws);
 
+    // This handlet  updates the state variables
+    //
     server.on("/update.html", HTTP_GET, [](AsyncWebServerRequest *request)
     {
         String name = request->getParam("name")->value();
@@ -138,20 +143,33 @@ void setup ( void )
         request->send(404);
     });
 
+    // Start the webserver
+    //
     server.begin();
     Serial.println ("Webserver started ");
+
+    // Start the temperature sensor
+    //
     temperatureSensorInit();
     Serial.println ("sensor started ");
+
+    //  Starts the relay PWM
+    //
     relayInit();
     Serial.println ("relay started ");
 }
 
 void loop ( void )
 {
-    //Get sensor data and set it as inut for the PID
+    //Get sensor data and set it as input for the PID, do 10 attempts
     //
     static double Input;
-    temperatureGetReading(&Input);
+    bool res = temperatureGetReadingSecurity(10, &Input);
+    if (res==false)
+    {
+            SetStatusError(); // Stop the cooking and report an error
+    }
+
     pidSetInput(Input);
 
     //log temperature in a remote server

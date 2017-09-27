@@ -10,6 +10,9 @@ static DallasTemperature sensors(&oneWire);
 static unsigned long delayInMillis = 0;
 static unsigned long lastTempRequest = 0;
 
+//////////////////////////////////////////////////////////////////
+// Inits the temperature sensor
+//////////////////////////////////////////////////////////////////
 void temperatureSensorInit()
 {
     //set resolution to 12 bits;
@@ -39,6 +42,9 @@ void temperatureSensorInit()
     }
 }
 
+//////////////////////////////////////////////////////////////////
+// Reads the temperature sensor
+//////////////////////////////////////////////////////////////////
 bool temperatureGetReading(double *t0)
 {
     unsigned long currTime = millis();
@@ -64,4 +70,19 @@ bool temperatureGetReading(double *t0)
     }
 
     return false;
+}
+
+
+bool temperatureGetReadingSecurity(int iterations, double *t0)
+{
+    for(int i=0;i<iterations;i++)
+    {
+        if (temperatureGetReading(double *t0))
+            return true;
+    }
+
+    return false;
+}
+
+
 }

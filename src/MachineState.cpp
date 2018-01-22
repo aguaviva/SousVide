@@ -11,7 +11,7 @@ enum CookingStatus
     ST_Error = 5,
 } statusCurrent = ST_Stopped;
 
-const char static *StatusMessages[] = { "Stopped", "Start", "Preheating", "Cooking", "Finished", "Error" };
+const char static *StatusMessages[] = { "Stopped", "Start", "Preheating", "Cooking", "Finished", "Error reading sensor" };
 
 Timer timer;
 

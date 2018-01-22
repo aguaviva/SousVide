@@ -10,6 +10,7 @@
 #include <DNSServer.h>
 #include <ESPAsyncWiFiManager.h>         //https://github.com/tzapu/WiFiManager
 
+#include "config.h"
 #include "helpers/History.h"
 #include "Relay.h"
 #include "Logger.h"
@@ -17,7 +18,6 @@
 #include "helpers/pwm.h"
 #include "TemperatureSensor.h"
 #include "MachineState.h"
-#include "config.h"
 
 
 //////////////////////////////////////////////////////////////////
@@ -138,6 +138,11 @@ void setup ( void )
         request->send ( 200, "application/json", "{ \"res\":\"ok\" }");
     });
 
+    server.on("/reset", HTTP_GET, [](AsyncWebServerRequest *request)
+    {
+      ESP.restart();
+    });
+
     server.onNotFound([](AsyncWebServerRequest *request)
     {
         request->send(404);
@@ -164,10 +169,10 @@ void loop ( void )
     //Get sensor data and set it as input for the PID, do 10 attempts
     //
     static double Input;
-    bool res = temperatureGetReadingSecurity(10, &Input);
-    if (res==false)
+    temperatureGetReadingSecurity(10, &Input);
+    if (Input==1000)
     {
-            SetStatusError(); // Stop the cooking and report an error
+       SetStatusError(); // Stop the cooking and report an error
     }
 
     pidSetInput(Input);

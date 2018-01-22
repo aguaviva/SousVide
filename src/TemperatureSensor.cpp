@@ -77,12 +77,9 @@ bool temperatureGetReadingSecurity(int iterations, double *t0)
 {
     for(int i=0;i<iterations;i++)
     {
-        if (temperatureGetReading(double *t0))
+        if (temperatureGetReading(t0))
             return true;
     }
 
     return false;
-}
-
-
 }

@@ -12,3 +12,5 @@ You'll need the following hardware:
 On the software side you will need to modify the config.h file to fit your needs.
 
 Compile, upload and connect to it using a browser, and the UI should be self explanatory (or so I hope)
+
+![](ui.png)

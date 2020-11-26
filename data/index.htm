@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SousVide</title>
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.2/jquery.min.js"></script>
-<link rel="stylesheet" href="https://gitcdn.link/repo/Chalarangelo/mini.css/master/dist/mini-default.min.css">
+<link rel="stylesheet" href="mini-default.min.css">
 <script>
 function lerp(a,b,t) { return a*(1-t)+b*t }
 function frac(a,b,v) { return (v - a)/(b-a) }
@@ -17,6 +17,57 @@ class Graph
     {
         this.canvas = canvas
         this.ctx = canvas.getContext("2d");
+    }
+    
+   scaleCanvas(width, height) 
+   {
+        // assume the device pixel ratio is 1 if the browser doesn't specify it
+        const devicePixelRatio = window.devicePixelRatio || 1;
+        
+        // determine the 'backing store ratio' of the canvas context
+        const backingStoreRatio = (
+        this.ctx.webkitBackingStorePixelRatio ||
+        this.ctx.mozBackingStorePixelRatio ||
+        this.ctx.msBackingStorePixelRatio ||
+        this.ctx.oBackingStorePixelRatio ||
+        this.ctx.backingStorePixelRatio || 1
+        );
+        
+        // determine the actual ratio we want to draw at
+        this.ratio = devicePixelRatio / backingStoreRatio;
+        
+        if (devicePixelRatio !== backingStoreRatio) 
+        {
+          // set the 'real' canvas size to the higher width/height
+          this.canvas.width = width * this.ratio;
+          this.canvas.height = height * this.ratio;
+          
+          // ...then scale it back down with CSS
+          this.canvas.style.width = width + 'px';
+          this.canvas.style.height = height + 'px';
+        }
+        else 
+        {
+          // this is a normal 1:1 device; just scale it simply
+          this.canvas.width = width;
+          this.canvas.height = height;
+          this.canvas.style.width = '';
+          canvas.style.height = '';
+        }
+        
+        // scale the drawing context so everything will work at the higher ratio
+        this.ctx.scale(this.ratio, this.ratio);
+    }    
+    
+    onResize(parent)
+    {
+        parent = this.canvas.parentElement        
+
+        var parent = this.canvas.parentNode,
+            styles = getComputedStyle(parent),
+            w = parseInt(styles.getPropertyValue("width"), 10);
+
+        this.scaleCanvas(w, 200);
     }
 
     SetXLimits(minX,maxX, divsX)
@@ -43,42 +94,15 @@ class Graph
             this.minY = Math.min(this.minY, path[t]);
         }
 
-        this.maxY = Math.ceil(this.maxY)
-        this.minY = Math.floor(this.minY)
-
-        //this.minY = this.maxY-5
-        var diffY = this.maxY-this.minY;
-
-        if (diffY==0)
-        {
-            this.minY--
-            this.maxY++
-        }
-
-	//if (diffY>5)
-	//{
-	//    this.minY = this.maxY-5;
-	//}
+        this.maxY = Math.ceil(this.maxY+.01)+.2
+        this.minY = Math.floor(this.minY-.01)-.2
 
         this.divsY=1
     }
 
-    drawScale(xoffset)
+    drawHorizontalScale(xoffset)
     {
-        this.ctx.beginPath();
-        this.ctx.strokeStyle = '#000000';
-        for(var t=this.minY;t<this.maxY;t+=this.divsY)
-        {
-            var tt = Math.round(this.scaleYToCanvas(t));
-
-            this.ctx.font = "15px Arial";
-            this.ctx.fillText(t,0,tt-2);
-
-            this.ctx.moveTo(10, tt);
-            this.ctx.lineTo(this.canvas.width, tt);
-        }
-        this.ctx.stroke();
-
+      //draw vertical lines
         xoffset = Math.max(0,xoffset-this.maxX);
         xoffset = (this.divsX) - xoffset % (this.divsX);
 
@@ -92,11 +116,41 @@ class Graph
         }
         this.ctx.stroke();
     }
+    
+    drawVerticalScaleLines()
+    {
+        this.ctx.beginPath();
+        this.ctx.strokeStyle = '#000000';
+        for(var t=Math.floor(this.minY);t<Math.ceil(this.maxY);t+=this.divsY)
+        {
+            var tt = Math.round(this.scaleYToCanvas(t));
+            this.ctx.moveTo(25, tt);
+            this.ctx.lineTo(this.canvas.width, tt);
+        }
+        this.ctx.stroke();
+    }
+
+    drawVerticalScaleNumbers()
+    {
+        //draw numbers
+        this.ctx.beginPath();
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.font = "bold 20px Arial";
+        this.ctx.textBaseline="middle"; 
+        for(var t=Math.floor(this.minY);t<Math.ceil(this.maxY);t+=this.divsY)
+        {
+            var tt = Math.round(this.scaleYToCanvas(t));
+            this.ctx.fillText(t,0,tt-2);
+        }
+        this.ctx.stroke();
+    }
 
     drawPath(path, color)
     {
         this.ctx.beginPath();
         this.ctx.strokeStyle = color;
+        this.ctx.lineWidth=2.5;
+
         var lastY=this.scaleYToCanvas(path[0])
         this.ctx.moveTo(0, lastY);
 
@@ -114,11 +168,11 @@ class Graph
 
     scaleYToCanvas(y)
     {
-        return map(y, this.minY, this.maxY, this.canvas.height, 0);
+        return map(y, this.minY, this.maxY, this.canvas.height/this.ratio, 0);
     }
     scaleXToCanvas(x)
     {
-        return map(x, this.minX, this.maxX, 0, this.canvas.width);
+        return map(x, this.minX, this.maxX, 0, this.canvas.width/this.ratio);
     }
 }
 
@@ -139,10 +193,9 @@ var histSize=0;
 var histInput = new Array()
 var histOutput = new Array()
 
-var host = location.hostname;
+var mylocation = location.host + ":"+location.port+location.pathname;
 var graph;
 var obj = false;
-
 
 function ProcessVars(vars, attr)
 {
@@ -155,7 +208,7 @@ function ProcessVars(vars, attr)
     if (type=="s")
     {
       comp.html("<input "+style+" id='"+ key+"' value='" + val + "' >");
-      comp.children().change(function() { FlashData($(this), $(this).val()) });
+      comp.children().change(function() { FlashData($(this), escape($(this).val())) });
     }
     else if (type=="f" || type=="i")
     {
@@ -178,24 +231,34 @@ function WebSocketTest()
 {
     if ("WebSocket" in window)
     {
-       // Let us open a web socket
-       var ws = new WebSocket("ws://" + host + "/ws");
-       ws.binaryType = "arraybuffer";
-       var xoffset = 0;
-       ws.onopen = function()
-       {
-          histInput = new Array();
-          histOutput = new Array();
-       };
+      document.getElementById("StatusMsg").innerHTML = "wss://" + location.host+ "/wsesp8266/ws";
+  
+      // Let us open a web socket
+      var ws;
+      if (location.protocol == 'https:')
+        ws = new WebSocket("wss://" + location.host + "/" + location.pathname + "/ws");
+      else 
+        ws = new WebSocket("ws://" + location.host + "/ws");
+  
+  
+        
+      ws.binaryType = "arraybuffer";
+      var xoffset = 0;
+      var idx =0;
+      ws.onopen = function()
+      {
+        histInput = new Array();
+        histOutput = new Array();
+      };
 
        ws.onerror = function(event)
        {
-	         $("#Status").html("Socket error");
+	         $("#sStatusMsg").val("Socket error");
        };
 
        ws.onclose = function(event)
        {
-	        $("#Status").html("Socket closed, reason:"+ event.code);
+	        $("#sStatusMsg").val("Socket closed, reason:"+ event.code);
        };
 
        ws.onmessage = function (evt)
@@ -217,11 +280,16 @@ function WebSocketTest()
 
             graph.clear();
             graph.SetLimitsAuto(histInput);
-            graph.drawScale(tOnTimeSecs);
+            graph.drawHorizontalScale(tOnTimeSecs);
+            graph.drawVerticalScaleLines(tOnTimeSecs);
 
             graph.drawPath(histInput, '#f00000');
             graph.SetYLimits(0,255,1);
             graph.drawPath(histOutput, '#008000');
+            graph.SetLimitsAuto(histInput);
+            graph.drawVerticalScaleNumbers(tOnTimeSecs);
+
+
             $("#tOnTimeSecs").val(SecondsToTimeHMS(tOnTimeSecs++));
             if (iStatus==3)
                 $("#sStatusMsg").val(sStatusMsg + ", time left:  " + SecondsToTimeHMS(tTimeLeft--));
@@ -231,6 +299,7 @@ function WebSocketTest()
                 histInput.shift();
                 histOutput.shift();
             }
+
           }
        };
     }
@@ -242,32 +311,51 @@ function WebSocketTest()
 
 function FlashData(comp, val)
 {
-  var v = TimeToSeconds(val)
-  if (v>=0) val = v;
+  try {
 
-  comp.css({"background-color":"#808080"})
-  str = "http://" + host + "/update.html?name=" + comp.attr('id') +"&val=" + val;
-  $.ajax({ url: str , context: comp, success: function()
-  {
-    var id = setInterval(fade, 100, $(this));
-    function fade(comp)
+    var v = TimeToSeconds(val)
+    if (v>=0) val = v;
+  
+    comp.css({"background-color":"#808080"})
+    str = location.href +"update.html?name=" + comp.attr('id') +"&val=" + val;
+    $.ajax({ url: str , context: comp, success: function()
     {
-      v = comp.css("background-color").split(",");
-      v = parseInt(v[1])+40;
-      comp.css({"background-color":"rgb("+v+","+v+","+v+")"})
-      if (v>=255)
+      var id = setInterval(fade, 100, $(this));
+      function fade(comp)
       {
-          clearInterval(id);
+        v = comp.css("background-color").split(",");
+        v = parseInt(v[1])+40;
+        comp.css({"background-color":"rgb("+v+","+v+","+v+")"})
+        if (v>=255)
+        {
+            clearInterval(id);
+        }
       }
-    }
-  }});
+    }});
+  }
+  catch(err) 
+  {
+    document.getElementById("StatusMsg").innerHTML = err.message;
+  }    
 }
 
 $(document).ready(function()
 {
   graph = new Graph(document.getElementById("myCanvas"));
   graph.SetXLimits(0,60*10, 60);
-  WebSocketTest();
+  
+  window.addEventListener('resize', function() { graph.onResize(document.getElementById("myCanvas")); } , false);        
+  graph.onResize(document.getElementById("myCanvas"));
+
+  try 
+  {
+    WebSocketTest();
+  }
+  catch(err) 
+  {
+    document.getElementById("StatusMsg").innerHTML = "Error starting web socket";
+  }    
+    
 })
 
 </script>
@@ -284,7 +372,7 @@ $(document).ready(function()
 </header>
 	<div class="container">
     <div class="row">
-      <div class="col-lg-4 col-lg-offset-4 col-md-5 col-md-offset-4 col-sm-12">
+      <div class="col-lg-8 col-lg-offset-2 col-md-8 col-md-offset-2 col-sm-12">
         <form>
           <fieldset>
             <legend>Temperature history</legend>
@@ -292,24 +380,22 @@ $(document).ready(function()
           </fieldset>
           <fieldset>
             <legend>controls</legend>
-            <div class="row">
               <div class="row label-aligned">
-                <div class="col-lg-3 col-md-3 col-sm-3">
+                <div class="col-lg-4 col-md-4 col-sm-4">
                   <label for="SetPoint">Temp:</label>
                 </div>
-                <div class="col-lg-9 col-md-9 col-sm-9">
-                  <div  id='SetPoint'></div>
+                <div class="col-lg-6 col-md-6 col-sm-6">
+                  <label for="TimeDelay">Timer:</label>
                 </div>
               </div>
               <div class="row label-aligned">
-                <div class="col-lg-3 col-md-3 col-sm-3">
-                  <label for="TimeDelay">Timer:</label>
+                <div class="col-lg-4 col-md-4 col-sm-4">
+                  <div  id='SetPoint'></div>
                 </div>
-                  <div class="col-lg-9 col-md-9 col-sm-9">
+                <div class="col-lg-7 col-md-7 col-sm-7">
                   <div  id='TimeDelay'></div>
                 </div>
               </div>
-            </div>
           </fieldset>
           <fieldset>
             <legend>Status</legend>
@@ -341,26 +427,24 @@ $(document).ready(function()
           <fieldset>
             <legend>PID constants</legend>
             <div class="row label-aligned">
-              <div class="col-lg-3  col-md-3 col-sm-3 ">
+              <div class="col-lg-4  col-md-4 col-sm-4 ">
                 <label>Kp</label>
               </div>
-              <div class="col-lg-9 col-md-9 col-sm-9">
-                <div  id='Kp'></div>
-              </div>
-            </div>
-            <div class="row label-aligned">
-              <div class="col-lg-3  col-md-3 col-sm-3 ">
+              <div class="col-lg-4  col-md-4 col-sm-4 ">
                 <label>Ki</label>
               </div>
-              <div class="col-lg-9 col-md-9 col-sm-9">
-                <div  id='Ki'></div>
+              <div class="col-lg-4  col-md-4 col-sm-4 ">
+                <label>Kd</label>
               </div>
             </div>
             <div class="row label-aligned">
-              <div class="col-lg-3  col-md-3 col-sm-3 ">
-                <label>Kd</label>
+              <div class="col-lg-4 col-md-4 col-sm-4">
+                <div id='Kp'></div>
               </div>
-              <div class="col-lg-9 col-md-9 col-sm-9">
+              <div class="col-lg-4 col-md-4 col-sm-4">
+                <div id='Ki'></div>
+              </div>
+              <div class="col-lg-4 col-md-4 col-sm-4">
                 <div id='Kd'></div>
               </div>
             </div>
